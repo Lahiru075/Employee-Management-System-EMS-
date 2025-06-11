@@ -1,0 +1,184 @@
+package lk.ijse.gdse;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.MultipartConfig;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
+import org.apache.commons.dbcp2.BasicDataSource;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@WebServlet("/api/v1/dashboard")
+@MultipartConfig
+public class EmployeeServlet extends HttpServlet {
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) {
+        try {
+            BasicDataSource basicDataSource = (BasicDataSource) req.getServletContext().getAttribute("dataSource");
+            Connection connection = basicDataSource.getConnection();
+            ResultSet resultSet = connection.prepareStatement("select * from employee").executeQuery();
+            List<Map<String, String>> elist = new ArrayList<>();
+
+            while (resultSet.next()) {
+                Map<String, String> event = new HashMap<>();
+                event.put("id", resultSet.getString("id"));
+                event.put("name", resultSet.getString("name"));
+                event.put("email", resultSet.getString("email"));
+                event.put("salary", resultSet.getString("salary"));
+                event.put("image", "/uploads/images/" + resultSet.getString("image"));
+                elist.add(event);
+            }
+
+            resp.setContentType("application/json");
+            resp.setHeader("Access-Control-Allow-Origin", "*");
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.writeValue(resp.getWriter(), elist);
+
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        Part imagePart = req.getPart("image");
+        String fileName = Paths.get(imagePart.getSubmittedFileName()).getFileName().toString();
+
+        String uploadDir = req.getServletContext().getRealPath("/uploads/images");
+        File uploadDirFile = new File(uploadDir);
+        if (!uploadDirFile.exists()) {
+            uploadDirFile.mkdirs();
+        }
+
+        String filePath = uploadDir + File.separator + fileName;
+        imagePart.write(filePath);
+
+        String relativePath = fileName;
+
+        String name = req.getParameter("name");
+        String email = req.getParameter("email");
+        String salary = req.getParameter("salary");
+
+        ServletContext servletContext = req.getServletContext();
+        BasicDataSource dataSource = (BasicDataSource) servletContext.getAttribute("dataSource");
+
+        try (Connection conn = dataSource.getConnection()) {
+            PreparedStatement pstm = conn.prepareStatement("INSERT INTO employee(name, email, salary, image) VALUES (?, ?, ?, ?)");
+            pstm.setString(1, name);
+            pstm.setString(2, email);
+            pstm.setString(3, salary);
+            pstm.setString(4, relativePath);
+
+            int rows = pstm.executeUpdate();
+
+            if (rows > 0) {
+                resp.setContentType("application/json");
+                resp.setStatus(HttpServletResponse.SC_OK);
+                resp.getWriter().write("{\"code\":200, \"status\":\"success\", \"message\":\"Insert successful\"}");
+            } else {
+                resp.setContentType("application/json");
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                resp.getWriter().write("{\"code\":400, \"error\":\"message\":\"Insert failed\"}");
+            }
+        } catch (SQLException e) {
+            resp.setContentType("application/json");
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            resp.getWriter().write("{\"code\":500, \"error\":\"message\":\"" + e.getMessage() + "\"}");
+        }
+    }
+
+
+
+    @Override
+    protected void doPut(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        String id = req.getParameter("id");
+        String name = req.getParameter("name");
+        String email = req.getParameter("email");
+        String salary = req.getParameter("salary");
+        Part imagePart = req.getPart("image");
+
+        String fileName = Paths.get(imagePart.getSubmittedFileName()).getFileName().toString();
+        String uploadDir = req.getServletContext().getRealPath("/uploads/images");
+        File uploadDirFile = new File(uploadDir);
+        if (!uploadDirFile.exists()) {
+            uploadDirFile.mkdirs();
+        }
+
+        String filePath = uploadDir + File.separator + fileName;
+        imagePart.write(filePath);
+        String relativePath = fileName;
+
+        ServletContext servletContext = req.getServletContext();
+        BasicDataSource dataSource = (BasicDataSource) servletContext.getAttribute("dataSource");
+
+        try (Connection conn = dataSource.getConnection()) {
+            PreparedStatement pstm = conn.prepareStatement("UPDATE employee SET name = ?, email = ?, salary = ?, image = ? WHERE id = ?");
+            pstm.setString(1, name);
+            pstm.setString(2, email);
+            pstm.setString(3, salary);
+            pstm.setString(4, relativePath);
+            pstm.setString(5, id);
+
+            int rows = pstm.executeUpdate();
+
+            resp.setContentType("application/json");
+            if (rows > 0) {
+                resp.setStatus(HttpServletResponse.SC_OK);
+                resp.getWriter().write("{\"code\":200, \"status\":\"success\", \"message\":\"Update successful\"}");
+            } else {
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                resp.getWriter().write("{\"code\":400, \"status\":\"error\", \"message\":\"Update failed\"}");
+            }
+        } catch (SQLException e) {
+            resp.setContentType("application/json");
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            resp.getWriter().write("{\"code\":500, \"status\":\"error\", \"message\":\"" + e.getMessage() + "\"}");
+        }
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        String id = req.getParameter("id");
+
+        ServletContext servletContext = req.getServletContext();
+        BasicDataSource dataSource = (BasicDataSource) servletContext.getAttribute("dataSource");
+
+        try (Connection conn = dataSource.getConnection()) {
+            PreparedStatement pstm = conn.prepareStatement("DELETE FROM employee WHERE id = ?");
+            pstm.setString(1, id);
+
+            int rows = pstm.executeUpdate();
+
+            resp.setContentType("application/json");
+            if (rows > 0) {
+                resp.setStatus(HttpServletResponse.SC_OK);
+                resp.getWriter().write("{\"code\":200, \"status\":\"success\", \"message\":\"Employee deleted\"}");
+            } else {
+                resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                resp.getWriter().write("{\"code\":404, \"status\":\"error\", \"message\":\"Employee not found\"}");
+            }
+
+        } catch (SQLException e) {
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            resp.setContentType("application/json");
+            resp.getWriter().write("{\"code\":500, \"status\":\"error\", \"message\":\"" + e.getMessage() + "\"}");
+        }
+    }
+}

@@ -1,0 +1,86 @@
+package lk.ijse.gdse;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import javax.sql.DataSource;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@WebServlet("/api/v1/signin")
+public class SignInServlet extends HttpServlet {
+
+    private DataSource dataSource;
+
+    @Override
+    public void init() throws ServletException {
+        ServletContext servletContext = getServletContext();
+        dataSource = (DataSource) servletContext.getAttribute("dataSource");
+    }
+
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, String> credentials = mapper.readValue(req.getInputStream(), Map.class);
+
+        String email = credentials.get("email");
+        String password = credentials.get("password");
+
+        try (Connection connection = dataSource.getConnection()) {
+            String query = "SELECT * FROM user WHERE email = ? AND password = ?";
+            PreparedStatement stmt = connection.prepareStatement(query);
+            stmt.setString(1, email);
+            stmt.setString(2, password);
+            ResultSet resultSet = stmt.executeQuery();
+
+            PrintWriter out=resp.getWriter();
+
+            resp.setContentType("application/json");
+
+            if(resultSet.next()){
+                resp.setStatus(HttpServletResponse.SC_ACCEPTED);
+                mapper.writeValue(out,Map.of(
+                        "code","201",
+                        "status","success",
+                        "message","User signed up successfully"
+                ));
+            }else {
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                mapper.writeValue(out,Map.of(
+                        "code","400",
+                        "status","error",
+                        "message","Bad Request"
+                ));
+            }
+
+            connection.close();
+            stmt.close();
+            resultSet.close();
+
+        } catch (SQLException e) {
+            PrintWriter out=resp.getWriter();
+            resp.setContentType("application/json");
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            mapper.writeValue(out,Map.of(
+                    "code","500",
+                    "status","error",
+                    "message","Internal Server Error"
+            ));
+            throw new RuntimeException(e);
+        }
+    }
+}

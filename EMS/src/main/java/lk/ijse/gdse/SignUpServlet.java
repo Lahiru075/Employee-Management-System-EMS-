@@ -1,0 +1,86 @@
+package lk.ijse.gdse;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import javax.sql.DataSource;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.util.Map;
+import java.util.UUID;
+
+@WebServlet("/api/v1/signup")
+public class SignUpServlet extends HttpServlet {
+    private DataSource dataSource;
+
+    @Override
+    public void init() throws ServletException {
+        ServletContext servletContext = getServletContext();
+        dataSource = (DataSource) servletContext.getAttribute("dataSource");
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String, String> event = mapper.readValue(req.getInputStream(), Map.class);
+
+            String name = event.get("name");
+            String email = event.get("email");
+            String password = event.get("password");
+
+            Connection connection = dataSource.getConnection();
+
+            String query = "INSERT INTO user (name, email, password) VALUES (?, ?, ?)";
+            PreparedStatement pstm = connection.prepareStatement(query);
+            pstm.setString(1, name);
+            pstm.setString(2, email);
+            pstm.setString(3, password);
+
+//            int rowsAffected = stmt.executeUpdate();
+//            resp.setContentType("application/json");
+//            mapper.writeValue(resp.getWriter(), rowsAffected);
+
+            int executed=pstm.executeUpdate();
+            PrintWriter out=resp.getWriter();
+            resp.setContentType("application/json");
+            mapper.writeValue(resp.getWriter(), executed);
+            if(executed>0){
+                resp.setStatus(HttpServletResponse.SC_ACCEPTED);
+                mapper.writeValue(out,Map.of(
+                        "code","201",
+                        "status","success",
+                        "message","User signed up successfully"
+                ));
+            }else {
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                mapper.writeValue(out,Map.of(
+                        "code","400",
+                        "status","error",
+                        "message","Bad Request"
+                ));
+            }
+            connection.close();
+
+        } catch (Exception e) {
+            ObjectMapper mapper = new ObjectMapper();
+            PrintWriter out=resp.getWriter();
+            resp.setContentType("application/json");
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            mapper.writeValue(out,Map.of(
+                    "code","500",
+                    "status","error",
+                    "message","Internal Server Error"
+            ));
+            throw new RuntimeException(e);
+        }
+    }
+
+}
